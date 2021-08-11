@@ -1,0 +1,430 @@
+---
+title: "Vehicle Sales Forecasting"
+author: "Yanet Gomez"
+date: "12/14/2020"
+output:
+  output=github_document
+bibliography: carsales.bib
+---
+
+# 1. DATA PROBLEM AND DESCRIPTION
+## 1.1. Why is this topic important?
+> The idea to explore car sales came from conversations about recent changes in the business models for some major automotive brands. With Ford, for example, it seems pretty obvious that a major change is taking place as the company is withdrawing their investments from in all of its traditional passenger cars, like the Fusion, Focus, and Taurus , and focusing almost exclusively in Trucks and SUVs [@Chappell]. Being that the automotive industry is one of the most important economic sectors and has considerable impacts not only on revenue, but also in employment and environmental implications, it is very important to its many stakeholders and government officials to  have reliable forecasting models. Auto sales , to include manufacturing of motor vehicles and parts, contributed about 2.6%  to U.S. gross domestic product in 2019 [@GDP]. Auto and auto parts sales  are the largest components of the total U.S. sales market, in 2020 auto and auto parts make up 10% of the total retail sales [@Retail], but it has been even a larger percentage in past years.  In 2018, the auto industry accounted for 20% of total sales, and on average, the industry employs 17.9 million people [@Amadeo].
+
+## 1.2. Data and Problem Description
+> The data for this project was collected from the Federal Reserve Economic Data site, and it covered  from the year 1976 to 2020. The main objective of our project is to generate a highly accurate forecasting model for total vehicle sales in the U.S. market. To improve the accuracy, I included exogenous parameters that may not have been included in previously published models, such as Federal Funds Rate and Housing Starts. First, I fit a univariate ARIMA  model, and then a multivariate ARIMA model, and compared forecast performance. The multivariate model performed much better. 
+
+## 1.3. Variables: 
+> The dataset includes 5 exogenous variables: Unemployment Rate Percent[@UNRATE], Gas Price Index[@CUSR0000SETB01], Consumer Price Index[@CUUR0000SA0R], Housing Starts[@HOUST], and Federal Funds Rate[@USALOCOSINOSTSAM]. The dependent variable is Car Sales[[@TOTALSA]. The training set includes data from January 1976 to December 2018. The test set includes the period from January 2019 to September 2020. 
+
+## Data Collection-DATA 1 (1992–2008)
+EXOGENOUS VARIABLES:
+\begin{center}
+\begin{tabular}{ |c|c|c|c| } 
+ \hline
+ \multicolumn{3}{|c|}{Dataset 1} \\
+ \hline
+ Parameter & Units & Frequency & Source \\
+ \hline\hline
+ Total Vehicle Sales & Millions of Units & Monthly & FRED \\
+ Unemployment Rate & Percent(SA) & Monthly & BLS\\
+ FedFunds & Index(SA) & Monthly & OECD\\
+ Consumer Prices & Index(SA) & Monthly  & BLS \\
+ Gasoline Prices & Index(SA) & Monthly & BLS \\
+ Housing Starts & Thousands of Units(SA) &  Monthly & FRED \\
+ \hline
+\end{tabular}
+\end{center}
+
+## 1.4. Methodology
+> I compared between univariate(ARIMA) and a multivariate time series model (ARIMA), and evaluated the performance of the models to see which of the two types performs better at predicting car sales. The data was not normalized, and correlation analysis was performed to assess the relationship between the variable of interest and independent variables, as well as to identify collinearity among the independent variables. The dataset was divided into train and test set. The Test set was used in the multivariate prediction, and to assess the accuracy of the models. The univariate prediction was based solely on time. 
+
+## 1.5. Literature Review:
+* **General Sales Forecast Models for Automobile Markets and their Analysis [@hulsmann2012general]**: 
+
+  + **Variables**: DAX, IFO, New Car Registrations, Gross Domestic Product, Personal Income, Rate in % of the total population, Interest Rate in %, Consumer Prices, Gasoline Prices, Private Consumption, Dow Jones, BCI
+
+  + **Methods**: Time series analysis and classic data mining algorithms.
+
+  + **Results**: Monthly forecasts were improved using absolute, normalized exogenous parameters. Decision trees were the most suitable method. The Support Vector Machine method did well due to its non-linearity. In contrast, linear methods like Ordinary Least Squares or Quantile Regression were not deemed not suitable.
+
+* **A Sales Forecast Model for the German Automobile Market Based on Time Series Analysis and Data Mining Methods.[@bruhl2009sales]**:
+
+  + **Variables**: GDP, Available Personal Income, Consumer Price Index, Unemployment Rate, Industrial Investment Demand, Petrol Charge, Price Consumption, Latent Replacement Demand, Model Policy
+
+  + **Methods**: The time series model used consists of additive components: trend, seasonal, calendar and error component, these were estimated in a univariate manner while the trend component was estimated in a multivariate manner by Multiple Linear Regression as well as by a Support Vector Machine (yearly, monthly and quarterly). For the estimation of the seasonal component the Phase Average method was used. The data consisted of the main time series (registrations of new automobiles) and the secondary time series, exogenous parameters. Feature selection method Wrapper Approach with two different regression methods were used.
+
+  + **Results**: This study found the non-linear model to be superior, and  the quarterly data provided the most accurate results.
+ 
+* **Monthly Car Sales Prediction Using Internet Word-of-Mouth (eWOM)[@INPROCEEDINGS]**: 
+
+  + **Variables**: Economic indexes, text mining technology, Internet “word of mouth”, and Google Trends variables created by keyword searches in order to forecast the monthly sales volumes of various makes and models of cars.
+
+  + **Methods**:  Sentiment Score calculation, popular keyword search score calculation, data normalization, the models compared consisted of: Genetic Algorithm/K-Nearest Neighbor (GA/KNN), Support Vector Regression,  Classification and Regression Trees,  and Neural Network. The evaluation metric used was MAPE %.
+
+  + **Results**: Among the four methods mentioned above, the GA/KNN model has the lowest predictive power in terms of Mean Absolute Percentage Error (MAPE), but GA/KNN can be used to create a successful forecasting model using only one month of data.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Packages
+#install.packages('MTS')
+#install.packages('nnfor')
+
+#Libraries
+library(psych) # To get statistical summary with describe()
+library(corrplot) # To create correlation matrix
+library(astsa) # for time series
+library(TSA) # for time series
+library(ggplot2) # for ggcorr
+library("GGally") #for ggpolot
+library(tseries) #for adfTest()
+library(MTS) # for differencing with diffM
+library(dplyr) # for apply
+library(nnfor)
+
+#Data import and exploration
+train_auto_sales <- read.csv("Train.csv")
+test_auto_sales <- read.csv("Test.csv")
+
+# Data Exploration
+#head(train_auto_sales)
+#head(test_auto_sales)
+#tail(train_auto_sales)
+
+#Statistical Summary
+#describe(train_auto_sales[2:7]) #train
+#describe(test_auto_sales[2:7]) #test
+
+```
+# 2. RESULTS AND DISCUSSION
+## Correlation Analysis among independent variables:
+> The correlation matrix shows a strong positive correlation between Gas Price and Consumer Price Index (.9), and a strong negative correlation (-.8) between Consumer Price Index and Fed Funds.There is a moderate negative correlation (-.6) between Gas Prices and Housing Starts, and Gas Prices and Fed Funds. We still want to keep these variables in the model because based on our secondary research, we think they can still add information as to what drives car sales.
+
+## Correlation Analysis between dependent and independent variables:
+> There is a strong negative correlation(-.8) between car sales and unemployment. There is a week relationship between car sales and gas prices. There is a moderate correlation (-4,4) between car prices and Consumer Price, Housing Starts, and Fed Funds. 
+
+```{r, echo=FALSE}
+#plot(train_auto_sales[2:7])
+#train_auto_sales.cor = cor(train_auto_sales[2:7])
+#train_auto_sales.cor 
+ggcorr(train_auto_sales[2:7], label = TRUE, label_size = 2.9, hjust = 1, layout.exp = 2)+ 
+  labs(title = "Correlation Matrix",
+       subtitle = "Training Set")
+```
+
+```{r,echo = FALSE }
+#Set the date column to date train set
+#train_auto_sales$date<-as.factor(train_auto_sales$date)
+date_format1<-strptime(train_auto_sales$date,format="%m/%d/%Y") #defining what is the original format of your date
+train_auto_sales$date<-as.Date(date_format1,format="%Y-%m-%d") #defining what is the desired format of your date
+train_auto_sales_ts <- ts(train_auto_sales[-1],start=c(1976,1),end=c(2018,12),frequency=12)
+
+#Set the date column to date test set
+test_auto_sales$date<-as.factor(test_auto_sales$date)
+date_format2<-strptime(test_auto_sales$date,format="%m/%d/%Y") #defining what is the original format of your date
+test_auto_sales$date<-as.Date(date_format2,format="%Y-%m-%d") #defining what is the desired format of your date
+test_auto_sales_ts<- ts(test_auto_sales[,-1],start=c(2019,1),end=c(2020,09),frequency=12)
+
+```
+## Time Series Plots
+
+> From the first line plot for the training data we can see that car sales has a non-stationary trend. The trend seems to go up and down, but there doesn't seem to be a seasonal pattern. The second plot for the test data shows a significant drop around March 2020, this is due to the COVID 19 shutdown. We do not expect the univariate autoregressive forecast to be able to reflect this. HOwever,  I am interested in seeing how well the multivariate model performs in this regard. 
+
+> The plots showing the test set's explanatory variables to be used in the multivariate model, show the impact of the shutdown, so I hope the forecast will be able to pick this up.
+
+### **Plotting Car Sales (Train Set)**
+
+```{r, fig.align = 'center', echo = FALSE}
+#Plot Car Sales Train
+plot(train_auto_sales_ts[,1], main="Train Set", xlab="Vehicle Sales")
+
+```
+### **Plotting Car Sales (Test Set)**
+
+```{r, fig.align='center', echo = FALSE}
+#Plot Car Sales Test
+plot(test_auto_sales_ts[,1], main="Test Set", xlab="Vehicle Sales")
+
+```
+### **All Variables on the same graph**
+
+```{r, echo = FALSE}
+
+#Plot with all variables in the same graph
+#theme_set(theme_bw())
+#autoplot(train_auto_sales_ts [,-1]) +
+  #ggtitle("Time Series Plot of the Auto Sales") +
+  #theme(plot.title = element_text(hjust = 0.5)) #for centering the text
+
+#Plot with standardized values all variables in the same graph
+#Scale the data for better display ****
+#Train set
+standardized_train<-train_auto_sales%>%mutate_at(scale, .vars = vars(-date))
+standardized_train_ts<-ts(standardized_train,start=c(1976,1),end=c(2018,12),frequency=12)
+#Test set
+standardized_test<-test_auto_sales%>%mutate_at(scale, .vars = vars(-date))
+standardized_test_ts<- ts(standardized_test,start=c(2019,1),end=c(2020,9),frequency=12)
+
+theme_set(theme_bw())
+autoplot(standardized_train_ts [,-1]) +
+  ggtitle("Time Series Plot of the Training Set") +
+  theme(plot.title = element_text(hjust = 0.1)) #for centering the text
+
+theme_set(theme_bw())
+autoplot(standardized_test_ts [,-1]) +
+  ggtitle("Time Series Plot of the Test Set") +
+  theme(plot.title = element_text(hjust = 0.1)) #for centering the text
+
+```
+
+## ACF Plots for each variable to check for stationarity.  
+We can see from the Vehicle sales ACF plot that the data is not stationary,  since the data decreases slowly. The adf.test confirms **non stationarity**. 
+
+```{r, echo = FALSE}
+#Extract Car Sales column
+TotalCarSales <- train_auto_sales_ts[,1]
+
+acf2(TotalCarSales, plot=TRUE)  
+
+#Test for stationarity
+#apply(train_auto_sales_ts, 2, adf.test)
+adf.test(TotalCarSales)
+
+```
+
+## Differencing to stationarize the data.
+
+```{r, echo = FALSE}
+differencedTrain<-diffM(train_auto_sales_ts)
+is.ts(differencedTrain)
+
+#Convert data back to TS because and after applying differencing, it changed. 
+differencedTrain<-ts(differencedTrain,start=c(1976,1),end=c(2018,12),frequency=12)
+is.ts(differencedTrain)
+```
+The Augmented Dickey-Fuller Test confirms the data is now **stationary**.
+
+```{r, echo = FALSE}
+
+#Extract differenced columns in order to plot
+diff_TotalCarSales <- differencedTrain[,1]
+#diff_UnemplRate <- differencedTrain[,2]
+#diff_GasPrices <- differencedTrain[,3]
+#diff_ConsumPrices <- differencedTrain[,4]
+#diff_HousingStarts <- differencedTrain[,5]
+#diff_FedFunds <- differencedTrain[,6]
+
+#Test to confirm
+#apply(differencedTrain, 2, adf.test)
+adf.test(diff_TotalCarSales)
+#Plot ACF ( Print 3 years+12 months+ buffer for the graphs, so about 40 lags)
+#tsdisplay(diff_TotalCarSales, points = F, lag.max = 50)  #at least an AR4 model as indicated by PACF
+#tsdisplay(diff_UnemplRate, points = F, lag.max = 50)  
+#tsdisplay(diff_GasPrices, points = F, lag.max = 50)  
+#tsdisplay(diff_ConsumPrices, points = F, lag.max = 50)  
+#tsdisplay(diff_HousingStarts, points = F, lag.max = 50)  
+#tsdisplay(diff_FedFunds, points = F, lag.max = 50)  
+
+```
+
+## Our first model is a univariate ARIMA. Starting with the autoARIMA function to extract parameters.
+auto.arima() with stepwise = F, and approximation = F returned an ARIMA(2,1,1)(2,0,0)[12], with AIC=1317.511. So, this is the AIC we are trying to beat with the manual ARIMA model parameter selection.
+
+```{r,echo = FALSE }
+mod1<-auto.arima(train_auto_sales_ts[,1]) #ARIMA(2,1,1)(0,0,2)[12] , AICc=1318.97
+mod2<-auto.arima(train_auto_sales_ts[,1], stepwise = F, approximation = F) #ARIMA(2,1,1)(2,0,0)[12], AICc=1317.68
+
+#Model 1
+#mod1$aic
+#mod1$aicc
+#mod1$bic
+
+#Model 2
+#mod2$aic
+#mod2$aicc
+#mod2$bic
+```
+
+## Manual ARIMA model Parameter Selection:
+* The process for manual parameter selection included evaluation of the ACF and PACF graphs as well as EACF. The decomposition shows some seasonal component, even though there is no seasonal pattern, but there is a varying trend, so a 2nd differencing step makes sense. We do not expect a constant in the model.
+  + q = 2, the ACF shows negative significance at lag 1 and 2, so we can try at least 1 MA order
+  + d = 1, given significant lags in PACF we can assume a second differencing step, non-constant trend
+  + p = 1, PACF shows sharp cut off between significant and non significant lags, so at least 1 AR order
+  + P = 1, because the correlation is negative at a significant lag, we can try  one AR order
+  + D = 0, there doesn't seem to be a constant seasonal pattern.
+  + Q = 1, Our data seems to have a non-constant seasonal effect. So,we could try 1 MA order.
+
+* From the evaluation of the ACF, PACF, EACF, we tried the following parameter options: 
+  + Model 3: p = 1, d = 1, q = 2, P = 1, D = 0, Q = 0
+  + Model 4: p = 1, d = 1, q = 2, P = 0, D = 0, Q = 1
+  + Model 5: p = 0, d = 2, q = 2, P = 0, D = 0, Q = 1
+  + Model 6: p = 1, d = 2, q = 2, P = 1, D = 0, Q = 0
+  + Model 7: p = 1, d = 1, q = 0, P = 1, D = 1, Q = 0
+  + Model 8: p = 1, d = 2, q = 0, P = 0, D = 0, Q = 0
+  + Model 9: p = 1, d = 2, q = 0, P = 0, D = 0, Q = 0
+  + Model 10: p = 0, d = 2, q = 1, P = 0, D = 0, Q = 0
+  + Model 11: p = 4, d = 1, q = 0, P = 0, D = 0, Q = 2
+  + Model 12: p = 0, d = 1, q = 3, P = 1, D = 0, Q = 0
+  + Model 13: p = 4, d = 2, q = 3, P = 0, D = 0, Q = 1
+  + Model 14: p = 0, d = 2, q = 3, P = 1, D = 0, Q = 0
+  + Model 15: p = 4, d = 2, q = 3, P = 0, D = 0, Q = 0
+  + Model 16: p = 0, d = 2, q = 3, P = 0, D = 0, Q = 0
+  + Model 17: p = 0, d = 1, q = 2, P = 0, D = 0, Q = 1
+  + Model 18: p = 0, d = 2, q = 2, P = 0, D = 0, Q = 1
+  + Model 19: p = 1, d = 2, q = 2, P = 0, D = 0, Q = 1
+  + Model 20: p = 1, d = 2, q = 2, P = 0, D = 0, Q = 0
+
+```{r,fig.align = 'center', echo = FALSE}
+#Exploration
+#ndiffs(train_auto_sales_ts[,1])  #As established before data should be differenced once 
+#eacf(train_auto_sales_ts[,1]) #Manual Parameter Selection with eacf
+plot(decompose(train_auto_sales_ts[,1])) #The decomposition shows some seasonal component
+
+### ACF and PACF of Car Sales 
+
+par(mar=c(3,3,3,0))
+tsdisplay(diff_TotalCarSales, points = F) 
+```
+
+The list below shows the AIC values for each of the models generated:
+```{r,echo = FALSE}
+
+#Manual Models
+mod3<- Arima(train_auto_sales_ts[,1], order=c(1,1,2),seasonal=list(order=c( 1,0,0)))
+mod4<- Arima(train_auto_sales_ts[,1], order=c(1,1,2), seasonal=list(order=c(0,0,1)))
+mod5<- Arima(train_auto_sales_ts[,1], order=c(0, 2, 2),seasonal=list(order=c(0,0,1)))
+mod6<- Arima(train_auto_sales_ts[,1], order=c(1, 2, 2),seasonal=list(order=c( 1, 0, 0))) 
+mod7<- Arima(train_auto_sales_ts[,1], order=c(1, 1, 0),seasonal=list(order=c( 0, 0, 1))) 
+mod8<- Arima(train_auto_sales_ts[,1], order=c(1, 2, 0),seasonal=list(order=c(0, 0, 0))) 
+mod9<- Arima(train_auto_sales_ts[,1], order=c(1, 2, 1),seasonal=list(order=c(0, 0, 0))) 
+mod10<- Arima(train_auto_sales_ts[,1],order=c( 0, 2, 1),seasonal=list(order=c( 0, 0, 0))) 
+mod11<- Arima(train_auto_sales_ts[,1],order=c( 4, 1, 0),seasonal=list(order=c( 0, 0, 2))) 
+mod12<- Arima(train_auto_sales_ts[,1], order=c(0,1,3),seasonal=list(order=c( 1,0,0)))
+mod13<- Arima(train_auto_sales_ts[,1], order=c(4,2,3),seasonal=list(order=c( 0,0,1)))
+mod14<- Arima(train_auto_sales_ts[,1], order=c(0,2,3),seasonal=list(order=c( 1,0,0)))
+mod15<- Arima(train_auto_sales_ts[,1], order=c(4,2,3),seasonal=list(order=c( 0,0,0)))
+mod16<- Arima(train_auto_sales_ts[,1], order=c(0,2,3),seasonal=list(order=c( 0,0,0)))
+mod17<- Arima(train_auto_sales_ts[,1], order=c(0,1,2),seasonal=list(order=c( 0,0,1)))
+mod18<- Arima(train_auto_sales_ts[,1], order=c(0,2,2),seasonal=list(order=c( 0,0,1)))
+mod19<- Arima(train_auto_sales_ts[,1], order=c(1,2,9),seasonal=list(order=c( 0,0,1)))
+mod20<- Arima(train_auto_sales_ts[,1], order=c(1,2,0),seasonal=list(order=c( 0,0,1)))
+
+# Univariate ARIMA Model Summary
+umodelselect<-cbind(c(mod1$aic,mod2$aic, mod3$aic, mod4$aic, mod5$aic, mod6$aic, mod7$aic,mod8$aic, mod9$aic,mod10$aic, mod11$aic, mod12$aic,mod13$aic, mod14$aic, mod15$aic,mod16$aic, mod17$aic,mod18$aic, mod19$aic, mod20$aic))
+colnames(umodelselect) <- c('AIC')
+rownames(umodelselect)<- c('mod1: ', 'mod2: ', 'mod3: ', 'mod4: ', 'mod5: ', 'mod6: ', 'mod7: ', 'mod8: ', 'mod9: ', 'mod10: ', 'mod11:', 'mod12: ', 'mod13: ', 'mod14: ', 'mod15: ', 'mod16: ', 'mod17: ', 'mod18: ', 'mod19: ', 'mod20: ')
+
+
+umodelselect # Compares all model's AIC, AICc, BIC side by side to compare
+
+```
+
+## Best model 
+The best model is **Model 2** (mod20, ARIMA(2,1,1)(2,0,0)[12] based on AIC (1317.511). The residuals look normal.
+
+```{r,echo = FALSE}
+mod2
+checkresiduals(mod2, points=F) #Looks good, residuals look normal
+```
+
+## Univariate ARIMA model fit and Forecast
+### Model 2: ARIMA(2,1,1)(2,0,0)[12]. 
+As we can see from the plot, showing the 'train' data, the actual values and the forecasted values, the univariate model doesn't seem to perform very well. It does not capture the pattern in the data. It, definitely does not account for the big drop in March 2020 due to COVID shutdown, but this is to be expected. It doesn't seem to capture the variation in the data at all, it almost has a constant trend. 
+
+```{r, fig.align = 'center', echo = FALSE}
+par(mar=c(3,3,3,0))
+u_arimafor<-forecast(mod2, 21)
+
+#plot(u_arimafor)
+u_arimafor_values<-u_arimafor$mean
+
+
+#Check the residuals
+#acf(residuals(mod2))
+
+#cbind("Regression Errors"= residuals(mod2, type="regression"), "ARIMA Errors"= residuals(mod2, #type="innovation")) %>% autoplot()
+
+#plot 
+Actual_Values<-test_auto_sales_ts[,1]
+autoplot(train_auto_sales_ts[,1])+
+  autolayer(Actual_Values) +
+  forecast::autolayer(u_arimafor$mean, 
+  series= "Univariate ARIMA Forecast")+
+  xlab('Time') +
+  ylab('Car Sales')+
+  guides(
+    colour=guide_legend(
+      title="Actual vs Forecast"))
+```
+
+## Multivariate Model Fit and Forecast
+### Model: ARIMA(1,0,2)(0,0,2)[12]
+We now fit a multivariate ARIMA model. As we can see from the graph, the multivariate ARIMA model performed much better at forecasting car sales. This model captured the drop in March 2020 due to COVID with accuracy, this is because this pattern was reflected in the independent variables used to build the model, as we saw at the beginning when we plot the time series including all the variables in the test set (this is the portion that includes this period). This confirms that the variable selection, and the inclusion of multiple variables is appropriate for predicting car sales. 
+  
+```{r, fig.align='center', echo = FALSE}
+# Extract independent variables from train_auto_sales_ts
+UnemplRate <- train_auto_sales_ts[,2]
+GasPrices <- train_auto_sales_ts[,3]
+ConsumPrices <- train_auto_sales_ts[,4]
+HousingStarts <- train_auto_sales_ts[,5]
+FedFunds <- train_auto_sales_ts[,6]
+
+#Turn all variables into univariate time series from the test set
+test_TotalCarSales<-ts(test_auto_sales$total_car_sales_M,start=c(2019,1),end=c(2020,9),frequency=12)
+test_UnemplRate<-ts(test_auto_sales$unemployment_percent,start=c(2019,1),end=c(2020,9),frequency=12)
+test_GasPrices<-ts(test_auto_sales$gas_prices_index,start=c(2019,1),end=c(2020,9),frequency=12)
+test_ConsumPrices<-ts(test_auto_sales$consumer_price_index,start=c(2019,1),end=c(2020,9),frequency=12)
+test_HousingStarts<-ts(test_auto_sales$housing_starts_K,start=c(2019,1),end=c(2020,9),frequency=12)
+test_FedFunds<-ts(test_auto_sales$fed_funds_percent,start=c(2019,1),end=c(2020,9),frequency=12)
+
+#Fit an auto.ARIMA model to the undifferenced data
+regressors_train<- cbind(UnemplRate, GasPrices, ConsumPrices, HousingStarts, FedFunds)
+regressors_test<-cbind(test_UnemplRate, test_GasPrices, test_ConsumPrices, test_HousingStarts, test_FedFunds)
+
+#Rename the test set columns, so they match the training set column names
+colnames(regressors_test) <- c("UnemplRate", "GasPrices", "ConsumPrices", "HousingStarts", "FedFunds")
+
+#Fit an auto.ARIMA model to the undifferenced data
+auto_arima_fit_raw<-auto.arima(TotalCarSales , xreg = regressors_train)
+auto_arima_fit_raw
+
+#Forecast ARIMA model using the test data and plot forecast
+aa_frc_raw <- forecast(auto_arima_fit_raw, xreg = regressors_test)
+autoplot(aa_frc_raw)
+
+#Check the residuals
+
+cbind("Regression Errors"= residuals(auto_arima_fit_raw, type="regression"), "ARIMA Errors"= residuals(auto_arima_fit_raw, type="innovation")) %>% autoplot()
+
+#Check fit for white noise
+acf(residuals(auto_arima_fit_raw, lag.max=(length(diff_TotalCarSales))))
+pacf(residuals(auto_arima_fit_raw))
+
+Actual_Values<-test_auto_sales_ts[,1]
+
+autoplot(train_auto_sales_ts[,1])+
+  autolayer(Actual_Values) +
+  forecast::autolayer(aa_frc_raw$mean, 
+  series= "Multivariate ARIMA Forecast")+
+  xlab('Time') +
+  ylab('Car Sales')+
+  guides(
+    colour=guide_legend(
+      title="Actual vs Forecast"))
+
+```
+
+## Forecast Accuracy Evaluation
+I based the forecast evaluation on the Mean Absolute Percentage Error(MAPE). The MAPE value for the univariate auto regressive model, is 14.72%. The MAPE value for the multivariate model is 7.41. The multivariate ARIMA model performed much better at predicting car prices. In addition, it was able to capture the drop in sales, caused by the COVID shutdown in March 2000, by gathering information from the exogenous variables included in the model that reflected the impact of the shutdown.
+  
+```{r}
+univariate<-as.data.frame(accuracy(u_arimafor_values, Actual_Values))
+univariate
+
+multivariate<-as.data.frame(accuracy(aa_frc_raw$mean, Actual_Values))
+multivariate
+```
+# 3. CONCLUSION
+> The multivariate ARIMA model performed much better at predicting car prices. In addition, it was able to capture the drop in sales, caused by the COVID shutdown in March 2000, by gathering information from the exogenous variables included in the model that reflected the impact of the shutdown. For future work, it will be interesting to include Neural Net and VAR models to compare their performance.
+
+# 4. REFERENCES  
